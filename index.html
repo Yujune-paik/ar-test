@@ -4,498 +4,552 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>AR ボクセルエディタ</title>
-  <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
-  <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { overflow: hidden; background: #000; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+    body {
+      overflow: hidden;
+      background: #0a0e1a;
+      font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    canvas { position: fixed; inset: 0; z-index: 0; display: block; }
 
-    #ui {
-      position: fixed;
-      top: 0; left: 0; right: 0;
-      z-index: 999;
-      pointer-events: none;
+    /* ── Start screen ──────────────────────────────────── */
+    #start-screen {
+      position: fixed; inset: 0; z-index: 100;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: linear-gradient(150deg, #0a0e1a 0%, #0d2040 60%, #0a1a30 100%);
+      padding: 32px;
+    }
+    #start-screen h1 {
+      color: #fff; font-size: 26px; font-weight: 800;
+      margin-bottom: 8px; text-align: center; letter-spacing: -0.5px;
+    }
+    #start-screen .sub {
+      color: rgba(255,255,255,0.5); font-size: 13px;
+      text-align: center; margin-bottom: 40px; line-height: 1.7;
+    }
+    .steps { width: 100%; max-width: 320px; margin-bottom: 40px; }
+    .step  { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 18px; }
+    .num {
+      width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+      background: rgba(79,172,254,0.2); border: 1.5px solid rgba(79,172,254,0.5);
+      color: #4facfe; display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700; margin-top: 1px;
+    }
+    .step p { color: rgba(255,255,255,0.75); font-size: 13px; line-height: 1.55; }
+    #ar-btn {
+      background: linear-gradient(135deg, #4facfe, #00d4ff);
+      color: #fff; border: none; padding: 16px 52px; border-radius: 32px;
+      font-size: 17px; font-weight: 700; cursor: pointer;
+      box-shadow: 0 6px 28px rgba(79,172,254,0.38);
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* ── Not supported ─────────────────────────────────── */
+    #not-supported {
+      display: none; position: fixed; inset: 0; z-index: 200;
+      background: #0a0e1a; color: #fff;
+      flex-direction: column; align-items: center; justify-content: center;
+      text-align: center; padding: 40px;
+    }
+    #not-supported h2 { font-size: 20px; margin-bottom: 16px; }
+    #not-supported p  { color: rgba(255,255,255,0.6); font-size: 14px; line-height: 1.75; }
+
+    /* ── AR UI (dom-overlay) ───────────────────────────── */
+    #ar-ui {
+      display: none; position: fixed; inset: 0; z-index: 50; pointer-events: none;
     }
 
     #topbar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      background: rgba(0,0,0,0.65);
-      backdrop-filter: blur(6px);
-      color: #fff;
-      padding: 10px 16px;
-      font-size: 14px;
-      font-weight: 600;
-      letter-spacing: 0.3px;
-    }
-
-    #status {
-      font-size: 12px;
-      font-weight: 400;
-      padding: 4px 10px;
-      border-radius: 12px;
-      background: rgba(255,204,0,0.2);
-      color: #ffcc00;
-      border: 1px solid rgba(255,204,0,0.4);
-      transition: all 0.3s;
-    }
-    #status.found {
-      background: rgba(68,255,136,0.2);
-      color: #44ff88;
-      border-color: rgba(68,255,136,0.4);
-    }
-
-    #toast {
-      position: fixed;
-      bottom: 90px;
-      left: 50%;
-      transform: translateX(-50%) translateY(20px);
-      background: rgba(0,0,0,0.75);
-      color: #fff;
-      padding: 10px 22px;
-      border-radius: 20px;
-      font-size: 13px;
-      z-index: 999;
-      pointer-events: none;
-      opacity: 0;
-      transition: opacity 0.3s, transform 0.3s;
-      white-space: nowrap;
-    }
-    #toast.show {
-      opacity: 1;
-      transform: translateX(-50%) translateY(0);
-    }
-
-    #bottom-bar {
-      position: fixed;
-      bottom: 0; left: 0; right: 0;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
+      position: absolute; top: 0; left: 0; right: 0;
+      display: flex; justify-content: space-between; align-items: center;
       padding: 12px 16px;
-      background: rgba(0,0,0,0.65);
-      backdrop-filter: blur(6px);
-      z-index: 999;
+      padding-top: max(12px, env(safe-area-inset-top));
+      background: rgba(0,0,0,0.52); backdrop-filter: blur(12px);
+      color: #fff; font-size: 13px; font-weight: 600;
+    }
+    #phase-badge {
+      font-size: 11px; font-weight: 500; padding: 4px 11px;
+      border-radius: 12px; transition: all 0.3s;
+      background: rgba(255,200,0,0.18); color: #ffcc00;
+      border: 1px solid rgba(255,200,0,0.35);
+    }
+    #phase-badge.ok {
+      background: rgba(68,255,136,0.18); color: #44ff88;
+      border-color: rgba(68,255,136,0.35);
     }
 
+    #hint {
+      position: absolute; bottom: 90px; left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.68); color: #fff;
+      padding: 11px 24px; border-radius: 22px;
+      font-size: 13px; white-space: nowrap;
+      transition: opacity 0.6s; pointer-events: none;
+    }
+
+    #bottom {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 14px 20px;
+      padding-bottom: max(14px, env(safe-area-inset-bottom));
+      background: rgba(0,0,0,0.52); backdrop-filter: blur(12px);
+      pointer-events: all;
+    }
     .btn {
-      color: #fff;
-      border: none;
-      padding: 10px 18px;
-      border-radius: 10px;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      pointer-events: all;
-      -webkit-tap-highlight-color: transparent;
+      color: #fff; border: none; padding: 10px 18px;
+      border-radius: 12px; font-size: 13px; font-weight: 600;
+      cursor: pointer; -webkit-tap-highlight-color: transparent;
     }
-    #reset-btn  { background: rgba(255,60,60,0.8); }
-    #undo-btn   { background: rgba(80,80,80,0.9); }
-    #marker-btn { background: rgba(60,130,255,0.85); }
-
-    #count-label {
-      color: rgba(255,255,255,0.85);
-      font-size: 13px;
-      text-align: center;
-      line-height: 1.4;
-    }
-    #count-label span { font-weight: 700; color: #fff; font-size: 16px; }
-
-    /* Marker popup */
-    #marker-popup {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.85);
-      z-index: 9999;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 24px;
-      pointer-events: all;
-    }
-    #marker-popup.open { display: flex; }
-    #marker-popup h2 { color: #fff; margin-bottom: 12px; font-size: 18px; }
-    #marker-popup p  { color: rgba(255,255,255,0.75); font-size: 13px; text-align: center; margin-bottom: 20px; line-height: 1.6; }
-    #marker-popup canvas { border: 4px solid #fff; border-radius: 8px; }
-    #close-popup {
-      margin-top: 20px;
-      background: rgba(60,130,255,0.9);
-      color: #fff;
-      border: none;
-      padding: 12px 32px;
-      border-radius: 12px;
-      font-size: 15px;
-      font-weight: 700;
-      cursor: pointer;
+    #undo-btn   { background: rgba(80,80,100,0.9); }
+    #reset-btn  { background: rgba(200,55,55,0.9); }
+    #repl-btn   {
+      display: none; position: absolute; top: 60px; right: 12px;
+      background: rgba(55,120,220,0.88); font-size: 11px;
+      padding: 8px 13px; pointer-events: all;
     }
 
-    #ripple-canvas {
-      position: fixed;
-      inset: 0;
-      pointer-events: none;
-      z-index: 998;
-    }
+    #counter { text-align: center; color: #fff; }
+    #counter big   { font-size: 26px; font-weight: 800; display: block; line-height: 1; }
+    #counter small { font-size: 10px; opacity: 0.55; display: block; margin-top: 3px; }
+
+    /* ── Ripple canvas ─────────────────────────────────── */
+    #ripple-cv { position: fixed; inset: 0; z-index: 49; pointer-events: none; }
   </style>
 </head>
 <body>
 
-<!-- UI Overlay -->
-<div id="ui">
+<!-- ── Start screen ─────────────────────────────────────── -->
+<div id="start-screen">
+  <h1>AR ボクセルエディタ</h1>
+  <p class="sub">1 m × 1 m の紙（4×4グリッド）をカメラで映して<br>ボクセルを積み上げましょう</p>
+  <div class="steps">
+    <div class="step"><div class="num">1</div><p>HTTPS アクセス &amp; カメラ許可を確認</p></div>
+    <div class="step"><div class="num">2</div><p>「AR を開始」→ 紙の上にリングが出たらタップしてグリッドを配置</p></div>
+    <div class="step"><div class="num">3</div><p>グリッドのセルをタップ → 半透明ボクセルが積まれる</p></div>
+  </div>
+  <button id="ar-btn" onclick="startAR()">AR を開始</button>
+</div>
+
+<!-- ── Unsupported ──────────────────────────────────────── -->
+<div id="not-supported">
+  <h2>WebXR AR 非対応</h2>
+  <p>
+    iOS 15.4 以降の <strong>Safari</strong> または<br>
+    Android の <strong>Chrome</strong> をご利用ください。<br><br>
+    <strong>HTTPS</strong> 接続が必要です。
+  </p>
+</div>
+
+<!-- ── AR UI overlay ────────────────────────────────────── -->
+<div id="ar-ui">
   <div id="topbar">
     <span>AR ボクセルエディタ</span>
-    <span id="status">マーカーを探しています…</span>
+    <span id="phase-badge">検索中…</span>
+  </div>
+
+  <div id="hint">カメラで紙を映してください</div>
+
+  <button class="btn" id="repl-btn" onclick="replaceGrid()">再配置</button>
+
+  <div id="bottom">
+    <button class="btn" id="undo-btn"  onclick="undoVoxel()">↩ 戻す</button>
+    <div id="counter"><big id="count">0</big><small>ボクセル</small></div>
+    <button class="btn" id="reset-btn" onclick="resetVoxels()">🗑 リセット</button>
   </div>
 </div>
 
-<div id="toast">グリッドの外です</div>
-
-<div id="bottom-bar">
-  <button class="btn" id="undo-btn" onclick="undoVoxel()">↩ 元に戻す</button>
-  <div id="count-label">ボクセル<br><span id="count">0</span></div>
-  <button class="btn" id="reset-btn" onclick="resetVoxels()">🗑 リセット</button>
-</div>
-
-<button class="btn" id="marker-btn"
-  style="position:fixed;top:54px;right:12px;z-index:999;font-size:12px;padding:8px 12px;pointer-events:all;"
-  onclick="openMarkerPopup()">
-  マーカー表示
-</button>
-
-<!-- Marker reference popup -->
-<div id="marker-popup">
-  <h2>Hiro マーカー</h2>
-  <p>このマーカーを印刷して紙に貼ってください。<br>カメラで映すとグリッドが表示されます。</p>
-  <canvas id="hiro-canvas" width="280" height="280"></canvas>
-  <button id="close-popup" onclick="closeMarkerPopup()">閉じる</button>
-</div>
-
-<!-- Tap ripple canvas -->
-<canvas id="ripple-canvas"></canvas>
-
-<!-- A-Frame AR Scene -->
-<a-scene
-  embedded
-  arjs="sourceType: webcam; debugUIEnabled: false; patternRatio: 0.75;"
-  renderer="logarithmicDepthBuffer: true; antialias: true; alpha: true;"
-  vr-mode-ui="enabled: false"
->
-  <a-marker
-    id="marker"
-    preset="hiro"
-    smooth="true"
-    smoothCount="5"
-    smoothTolerance="0.01"
-    smoothThreshold="5"
-    emitevents="true"
-  >
-    <a-entity id="grid-root"></a-entity>
-  </a-marker>
-
-  <a-entity camera></a-entity>
-</a-scene>
+<!-- ── Tap ripple ────────────────────────────────────────── -->
+<canvas id="ripple-cv"></canvas>
 
 <script>
-// ─── Constants ───────────────────────────────────────────────────────────────
-const GRID_N     = 4;
-const CELL       = 0.25;   // AR units per cell
-const VOX_H      = 0.25;   // voxel height
-const HALF       = (GRID_N * CELL) / 2;  // 0.5
+'use strict';
 
-// Per-column tint palette (one hue per column)
-const COL_COLORS = ['#5588ff', '#ff6655', '#55cc66', '#ffbb33'];
+// ═══════════════════ Config ═══════════════════════════════
+const GRID_N = 4;
+const GRID_M = 1.0;              // 1 m × 1 m
+const CELL   = GRID_M / GRID_N; // 0.25 m per cell
+const VOX_H  = CELL;            // cubic voxels
+const HALF   = GRID_M / 2;      // 0.5 m
 
-// ─── State ───────────────────────────────────────────────────────────────────
-let heights  = Array.from({length: GRID_N}, () => new Array(GRID_N).fill(0));
-let history  = [];          // [{row, col, el}]
-let markerOK = false;
-let lastTap  = 0;
+// One hue per column  (blue / red / green / amber)
+const PALETTE = [0x4488ff, 0xff5544, 0x44cc66, 0xffaa22];
 
-// ─── Grid init ───────────────────────────────────────────────────────────────
+// ═══════════════════ Three.js bootstrap ═══════════════════
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.xr.enabled = true;
+document.body.prepend(renderer.domElement);
+
+const scene  = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 200);
+scene.add(camera);
+
+scene.add(new THREE.AmbientLight(0xffffff, 1.0));
+const sun = new THREE.DirectionalLight(0xffffff, 0.6);
+sun.position.set(2, 5, 3);
+scene.add(sun);
+
+window.addEventListener('resize', () => {
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+});
+
+// ═══════════════════ Grid group ═══════════════════════════
+const gridGroup = new THREE.Group();
+gridGroup.visible = false;
+scene.add(gridGroup);
+
+// ─── Reticle (placement guide ring) ───────────────────────
+const reticle = (() => {
+  const geo = new THREE.RingGeometry(0.07, 0.095, 40);
+  geo.rotateX(-Math.PI / 2);
+  const mat = new THREE.MeshBasicMaterial({ color: 0x44aaff, side: THREE.DoubleSide });
+  const m = new THREE.Mesh(geo, mat);
+  m.matrixAutoUpdate = false;
+  m.visible = false;
+  scene.add(m);
+  return m;
+})();
+
+// ═══════════════════ State ════════════════════════════════
+let heights = mkHeights();
+let history = [];   // [{row, col, mesh}]
+let phase   = 'scanning'; // scanning | placing | editing
+let lastTap = 0;
+
+function mkHeights() {
+  return Array.from({length: GRID_N}, () => new Array(GRID_N).fill(0));
+}
+
+// ═══════════════════ Grid builder ═════════════════════════
 function buildGrid() {
-  const root = document.getElementById('grid-root');
+  gridGroup.clear();
 
-  // Semi-transparent base plane
-  const base = document.createElement('a-plane');
-  base.setAttribute('rotation', '-90 0 0');
-  base.setAttribute('width',  GRID_N * CELL);
-  base.setAttribute('height', GRID_N * CELL);
-  base.setAttribute('material', 'color:#ffffff; opacity:0.12; transparent:true; side:double;');
-  root.appendChild(base);
+  // Translucent base
+  const base = new THREE.Mesh(
+    new THREE.PlaneGeometry(GRID_M, GRID_M),
+    new THREE.MeshBasicMaterial({
+      color: 0xffffff, opacity: 0.08,
+      transparent: true, side: THREE.DoubleSide, depthWrite: false
+    })
+  );
+  base.rotation.x = -Math.PI / 2;
+  gridGroup.add(base);
 
   // Grid lines
+  const lm = new THREE.LineBasicMaterial({ color: 0x111111, opacity: 0.7, transparent: true });
   for (let i = 0; i <= GRID_N; i++) {
     const p = -HALF + i * CELL;
-    const hLine = mkLine(-HALF, 0.003, p,  HALF, 0.003, p,  '#222222');
-    const vLine = mkLine(p, 0.003, -HALF,  p, 0.003,  HALF, '#222222');
-    root.appendChild(hLine);
-    root.appendChild(vLine);
+    gridGroup.add(seg(-HALF, 0.003, p,  HALF, 0.003, p,  lm));
+    gridGroup.add(seg(p, 0.003, -HALF,  p, 0.003,  HALF, lm));
   }
 
-  // Cell tint overlays
+  // Cell colour tints
   for (let r = 0; r < GRID_N; r++) {
     for (let c = 0; c < GRID_N; c++) {
-      const cx = -HALF + c * CELL + CELL / 2;
-      const cz = -HALF + r * CELL + CELL / 2;
-      const tile = document.createElement('a-plane');
-      tile.setAttribute('rotation', '-90 0 0');
-      tile.setAttribute('position', `${cx} 0.001 ${cz}`);
-      tile.setAttribute('width',  CELL * 0.95);
-      tile.setAttribute('height', CELL * 0.95);
-      tile.setAttribute('material', `color:${COL_COLORS[c]}; opacity:0.08; transparent:true; side:double;`);
-      root.appendChild(tile);
+      const tile = new THREE.Mesh(
+        new THREE.PlaneGeometry(CELL * 0.93, CELL * 0.93),
+        new THREE.MeshBasicMaterial({
+          color: PALETTE[c], opacity: 0.08,
+          transparent: true, side: THREE.DoubleSide, depthWrite: false
+        })
+      );
+      tile.rotation.x = -Math.PI / 2;
+      tile.position.set(
+        -HALF + c * CELL + CELL / 2, 0.001,
+        -HALF + r * CELL + CELL / 2
+      );
+      gridGroup.add(tile);
     }
   }
 }
 
-function mkLine(x1, y1, z1, x2, y2, z2, color) {
-  const e = document.createElement('a-entity');
-  e.setAttribute('line', `start:${x1} ${y1} ${z1}; end:${x2} ${y2} ${z2}; color:${color};`);
-  return e;
+function seg(x1,y1,z1, x2,y2,z2, mat) {
+  const geo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(x1,y1,z1), new THREE.Vector3(x2,y2,z2)
+  ]);
+  return new THREE.Line(geo, mat);
 }
 
-// ─── Voxel placement ─────────────────────────────────────────────────────────
+// ═══════════════════ Voxel ops ════════════════════════════
 function addVoxel(row, col) {
-  const root  = document.getElementById('grid-root');
   const stack = heights[row][col];
-
   const x = -HALF + col * CELL + CELL / 2;
   const z = -HALF + row * CELL + CELL / 2;
   const y = stack * VOX_H + VOX_H / 2;
 
-  // Color: column hue, lighter as height increases
-  const baseColor = COL_COLORS[col];
-  const hsl = hexToHSL(baseColor);
-  const lightness = Math.min(hsl.l + stack * 6, 78);
-  const color = `hsl(${hsl.h},${hsl.s}%,${lightness}%)`;
+  const hue = colHue(PALETTE[col]);
+  const lig = Math.min(50 + stack * 6, 78);
+  const color = new THREE.Color(`hsl(${hue},65%,${lig}%)`);
 
-  const box = document.createElement('a-box');
-  box.setAttribute('position', `${x} ${y} ${z}`);
-  box.setAttribute('width',  CELL * 0.88);
-  box.setAttribute('height', VOX_H * 0.92);
-  box.setAttribute('depth',  CELL * 0.88);
-  box.setAttribute('material', `color:${color}; opacity:0.72; transparent:true; side:double;`);
-  box.setAttribute('scale', '0.01 0.01 0.01');
-  box.setAttribute('animation',
-    'property:scale; to:1 1 1; dur:180; easing:easeOutBack;');
-  root.appendChild(box);
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(CELL * 0.86, VOX_H * 0.90, CELL * 0.86),
+    new THREE.MeshPhongMaterial({
+      color, opacity: 0.72, transparent: true,
+      side: THREE.DoubleSide, shininess: 55
+    })
+  );
+  mesh.position.set(x, y, z);
+  mesh.scale.setScalar(0.01);
+  gridGroup.add(mesh);
+  popIn(mesh, 200);
 
   heights[row][col]++;
-  history.push({row, col, el: box});
+  history.push({row, col, mesh});
   document.getElementById('count').textContent = history.length;
 }
 
 function undoVoxel() {
   if (!history.length) return;
-  const {row, col, el} = history.pop();
-  el.parentNode && el.parentNode.removeChild(el);
+  const {row, col, mesh} = history.pop();
+  gridGroup.remove(mesh);
+  mesh.geometry.dispose(); mesh.material.dispose();
   heights[row][col]--;
   document.getElementById('count').textContent = history.length;
 }
 
 function resetVoxels() {
-  history.forEach(({el}) => el.parentNode && el.parentNode.removeChild(el));
-  history  = [];
-  heights  = Array.from({length: GRID_N}, () => new Array(GRID_N).fill(0));
+  history.forEach(({mesh}) => {
+    gridGroup.remove(mesh);
+    mesh.geometry.dispose(); mesh.material.dispose();
+  });
+  history = []; heights = mkHeights();
   document.getElementById('count').textContent = 0;
 }
 
-// ─── Tap → raycast → grid cell ───────────────────────────────────────────────
+// ═══════════════════ Grid placement ═══════════════════════
+function placeGrid() {
+  if (!reticle.visible) return;
+  gridGroup.position.setFromMatrixPosition(reticle.matrix);
+  gridGroup.quaternion.setFromRotationMatrix(reticle.matrix);
+  gridGroup.visible = true;
+  reticle.visible   = false;
+  document.getElementById('repl-btn').style.display = 'block';
+  setPhase('editing');
+}
+
+function replaceGrid() {
+  gridGroup.visible = false;
+  reticle.visible   = false;
+  resetVoxels();
+  document.getElementById('repl-btn').style.display = 'none';
+  setPhase('scanning');
+}
+
+// ═══════════════════ Tap → voxel ══════════════════════════
+const raycaster  = new THREE.Raycaster();
+const gridNormal = new THREE.Vector3();
+const gridOrigin = new THREE.Vector3();
+const hitPlane   = new THREE.Plane();
+
 function handleTap(e) {
   const now = Date.now();
-  if (now - lastTap < 320) return;
+  if (now - lastTap < 280) return;
   lastTap = now;
 
-  if (!markerOK) return;
+  // Ignore taps on UI buttons
+  if (e.target && e.target.closest) {
+    if (e.target.closest('#bottom') || e.target.closest('#repl-btn')) return;
+  }
 
-  const marker = document.getElementById('marker');
-  const scene  = document.querySelector('a-scene');
+  if (phase === 'placing') { placeGrid(); return; }
+  if (phase !== 'editing') return;
 
   let cx, cy;
   if (e.touches && e.touches.length) {
-    cx = e.touches[0].clientX;
-    cy = e.touches[0].clientY;
+    cx = e.touches[0].clientX; cy = e.touches[0].clientY;
   } else {
-    cx = e.clientX;
-    cy = e.clientY;
+    cx = e.clientX; cy = e.clientY;
   }
 
   spawnRipple(cx, cy);
 
-  const cam      = scene.camera;
-  const renderer = scene.renderer;
-  const rect     = renderer.domElement.getBoundingClientRect();
-  const ndcX     = ((cx - rect.left) / rect.width)  * 2 - 1;
-  const ndcY     = -((cy - rect.top)  / rect.height) * 2 + 1;
+  const ndcX =  (cx / window.innerWidth)  * 2 - 1;
+  const ndcY = -(cy / window.innerHeight) * 2 + 1;
 
-  const raycaster = new THREE.Raycaster();
-  raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), cam);
+  // In WebXR, renderer.xr.getCamera().cameras[0] is the mono perspective cam
+  const xrCam   = renderer.xr.getCamera();
+  const perspCam = (xrCam.cameras && xrCam.cameras.length)
+    ? xrCam.cameras[0] : xrCam;
+  raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), perspCam);
 
-  const mObj = marker.object3D;
-  const wPos = new THREE.Vector3();
-  const wQuat = new THREE.Quaternion();
-  mObj.getWorldPosition(wPos);
-  mObj.getWorldQuaternion(wQuat);
-
-  const normal = new THREE.Vector3(0, 1, 0).applyQuaternion(wQuat);
-  const plane  = new THREE.Plane().setFromNormalAndCoplanarPoint(normal, wPos);
+  // Grid plane in world space
+  gridGroup.getWorldPosition(gridOrigin);
+  gridGroup.getWorldQuaternion(
+    new THREE.Quaternion().setFromRotationMatrix(gridGroup.matrixWorld)
+  );
+  gridNormal.set(0, 1, 0).applyQuaternion(
+    new THREE.Quaternion().setFromRotationMatrix(gridGroup.matrixWorld)
+  );
+  hitPlane.setFromNormalAndCoplanarPoint(gridNormal, gridOrigin);
 
   const hit = new THREE.Vector3();
-  if (!raycaster.ray.intersectPlane(plane, hit)) return;
+  if (!raycaster.ray.intersectPlane(hitPlane, hit)) return;
 
-  const local = mObj.worldToLocal(hit.clone());
-
-  const gx  = local.x + HALF;
-  const gz  = local.z + HALF;
-  const col = Math.floor(gx / CELL);
-  const row = Math.floor(gz / CELL);
+  const local = gridGroup.worldToLocal(hit.clone());
+  const col   = Math.floor((local.x + HALF) / CELL);
+  const row   = Math.floor((local.z + HALF) / CELL);
 
   if (col >= 0 && col < GRID_N && row >= 0 && row < GRID_N) {
     addVoxel(row, col);
-  } else {
-    showToast('グリッドの外です');
   }
 }
 
-// ─── Ripple effect ───────────────────────────────────────────────────────────
-const rippleCanvas = document.getElementById('ripple-canvas');
-const rCtx = rippleCanvas.getContext('2d');
+document.addEventListener('touchstart', handleTap, {passive: true});
+document.addEventListener('click',      handleTap);
+
+// ═══════════════════ Phase UI ═════════════════════════════
+function setPhase(p) {
+  phase = p;
+  const hint  = document.getElementById('hint');
+  const badge = document.getElementById('phase-badge');
+  hint.style.opacity = '1'; hint.style.transition = '';
+  badge.classList.remove('ok');
+
+  switch (p) {
+    case 'scanning':
+      hint.textContent  = '平らな面（紙）をカメラで映してください';
+      badge.textContent = '検索中…';
+      break;
+    case 'placing':
+      hint.textContent  = 'リングが表示されました — タップしてグリッドを配置';
+      badge.textContent = 'タップして配置';
+      break;
+    case 'editing':
+      hint.textContent  = 'グリッドをタップしてボクセルを追加';
+      badge.textContent = '編集中'; badge.classList.add('ok');
+      setTimeout(() => {
+        hint.style.transition = 'opacity 0.7s';
+        hint.style.opacity = '0';
+      }, 3500);
+      break;
+  }
+}
+
+// ═══════════════════ Ripple ═══════════════════════════════
+const rcv   = document.getElementById('ripple-cv');
+const rctx  = rcv.getContext('2d');
 let ripples = [];
 
 function resizeRippleCanvas() {
-  rippleCanvas.width  = window.innerWidth;
-  rippleCanvas.height = window.innerHeight;
+  rcv.width = window.innerWidth; rcv.height = window.innerHeight;
 }
 resizeRippleCanvas();
 window.addEventListener('resize', resizeRippleCanvas);
 
-function spawnRipple(x, y) {
-  ripples.push({x, y, r: 0, alpha: 0.8, t: 0});
-}
+function spawnRipple(x, y) { ripples.push({x, y, r: 0, a: 0.7}); }
 
-function animateRipples() {
-  rCtx.clearRect(0, 0, rippleCanvas.width, rippleCanvas.height);
-  ripples = ripples.filter(rp => rp.alpha > 0.02);
-  for (const rp of ripples) {
-    rp.r    += 3.5;
-    rp.alpha *= 0.88;
-    rCtx.beginPath();
-    rCtx.arc(rp.x, rp.y, rp.r, 0, Math.PI * 2);
-    rCtx.strokeStyle = `rgba(255,255,255,${rp.alpha})`;
-    rCtx.lineWidth = 2.5;
-    rCtx.stroke();
+(function animRipples() {
+  rctx.clearRect(0, 0, rcv.width, rcv.height);
+  ripples = ripples.filter(p => p.a > 0.02);
+  for (const p of ripples) {
+    p.r += 4.5; p.a *= 0.85;
+    rctx.beginPath();
+    rctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    rctx.strokeStyle = `rgba(255,255,255,${p.a})`;
+    rctx.lineWidth = 2.5;
+    rctx.stroke();
   }
-  requestAnimationFrame(animateRipples);
+  requestAnimationFrame(animRipples);
+})();
+
+// ═══════════════════ Helpers ══════════════════════════════
+function popIn(obj, dur) {
+  const t0 = performance.now();
+  (function tick() {
+    const t = Math.min((performance.now() - t0) / dur, 1);
+    const s = easeOutBack(t);
+    obj.scale.setScalar(Math.max(s, 0.001));
+    if (t < 1) requestAnimationFrame(tick);
+  })();
 }
-animateRipples();
-
-// ─── Toast ───────────────────────────────────────────────────────────────────
-let toastTimer;
-function showToast(msg) {
-  const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 1800);
+function easeOutBack(t) {
+  const c1 = 1.70158, c3 = c1 + 1;
+  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+}
+function colHue(hex) {
+  const c = new THREE.Color(hex);
+  const M = Math.max(c.r,c.g,c.b), m = Math.min(c.r,c.g,c.b), d = M - m;
+  if (!d) return 0;
+  let h = M === c.r ? (c.g - c.b)/d : M === c.g ? (c.b - c.r)/d + 2 : (c.r - c.g)/d + 4;
+  return Math.round(h * 60 + (h < 0 ? 360 : 0));
 }
 
-// ─── Marker popup (draw Hiro marker via canvas) ───────────────────────────────
-function openMarkerPopup()  { document.getElementById('marker-popup').classList.add('open'); }
-function closeMarkerPopup() { document.getElementById('marker-popup').classList.remove('open'); }
+// ═══════════════════ WebXR session ════════════════════════
+let xrSession     = null;
+let hitTestSrc    = null;
+let localRefSpace = null;
 
-function drawHiroMarker() {
-  // Simplified Hiro-like marker for reference; actual Hiro pattern
-  const cv  = document.getElementById('hiro-canvas');
-  const ctx = cv.getContext('2d');
-  const S   = cv.width;
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(0, 0, S, S);
+async function startAR() {
+  if (!navigator.xr) { showUnsupported(); return; }
+  const ok = await navigator.xr.isSessionSupported('immersive-ar').catch(() => false);
+  if (!ok) { showUnsupported(); return; }
 
-  // Black outer border
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, S, S);
+  document.getElementById('start-screen').style.display = 'none';
+  document.getElementById('ar-ui').style.display = 'block';
 
-  // White inner frame
-  const M = S * 0.08;
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(M, M, S - M*2, S - M*2);
-
-  // The actual Hiro pattern (binary 2D code inside)
-  // Draw the simplified inner pattern
-  const inner = S * 0.16;
-  const cellW = (S - inner*2) / 7;
-
-  // Hiro pattern bits (7x7 grid, inner part)
-  const hiro = [
-    [1,1,1,1,1,1,1],
-    [1,0,0,0,0,0,1],
-    [1,0,0,1,0,0,1],
-    [1,0,1,1,1,0,1],
-    [1,0,0,1,0,0,1],
-    [1,0,0,0,0,0,1],
-    [1,1,1,1,1,1,1],
-  ];
-
-  for (let r = 0; r < 7; r++) {
-    for (let c = 0; c < 7; c++) {
-      ctx.fillStyle = hiro[r][c] ? '#000' : '#fff';
-      ctx.fillRect(
-        inner + c * cellW,
-        inner + r * cellW,
-        cellW, cellW
-      );
+  const opts = {
+    requiredFeatures: ['hit-test', 'local'],
+    optionalFeatures: ['dom-overlay', 'anchors'],
+    domOverlay: {root: document.getElementById('ar-ui')}
+  };
+  try {
+    xrSession = await navigator.xr.requestSession('immersive-ar', opts);
+  } catch {
+    try {
+      xrSession = await navigator.xr.requestSession('immersive-ar',
+        {requiredFeatures: ['hit-test', 'local']});
+    } catch {
+      showUnsupported(); return;
     }
   }
 
-  // Note overlay
-  ctx.fillStyle = 'rgba(0,0,0,0)';
-}
+  await renderer.xr.setSession(xrSession);
+  renderer.setAnimationLoop(onFrame);
 
-// ─── Color util ──────────────────────────────────────────────────────────────
-function hexToHSL(hex) {
-  let r = parseInt(hex.slice(1,3),16)/255;
-  let g = parseInt(hex.slice(3,5),16)/255;
-  let b = parseInt(hex.slice(5,7),16)/255;
-  const max = Math.max(r,g,b), min = Math.min(r,g,b);
-  let h, s, l = (max+min)/2;
-  if (max === min) { h = s = 0; }
-  else {
-    const d = max - min;
-    s = l > 0.5 ? d/(2-max-min) : d/(max+min);
-    switch(max){
-      case r: h = ((g-b)/d + (g<b?6:0))/6; break;
-      case g: h = ((b-r)/d + 2)/6;          break;
-      case b: h = ((r-g)/d + 4)/6;          break;
-    }
-  }
-  return {h: Math.round(h*360), s: Math.round(s*100), l: Math.round(l*100)};
-}
+  xrSession.addEventListener('end', () => {
+    hitTestSrc?.cancel(); hitTestSrc = null;
+    renderer.setAnimationLoop(null);
+  });
 
-// ─── Boot ────────────────────────────────────────────────────────────────────
-const aScene = document.querySelector('a-scene');
-const aMarker = document.getElementById('marker');
+  localRefSpace = await xrSession.requestReferenceSpace('local');
+  const viewerSpace = await xrSession.requestReferenceSpace('viewer');
+  hitTestSrc = await xrSession.requestHitTestSource({space: viewerSpace});
 
-aScene.addEventListener('loaded', () => {
   buildGrid();
-  drawHiroMarker();
-  document.addEventListener('touchstart', handleTap, {passive: true});
-  document.addEventListener('click',      handleTap);
-});
+  setPhase('scanning');
+}
 
-aMarker.addEventListener('markerFound', () => {
-  markerOK = true;
-  const st = document.getElementById('status');
-  st.textContent = 'マーカー検出 ✓';
-  st.classList.add('found');
-});
+// ═══════════════════ Render / XR frame ════════════════════
+function onFrame(time, frame) {
+  if (!frame) { renderer.render(scene, camera); return; }
 
-aMarker.addEventListener('markerLost', () => {
-  markerOK = false;
-  const st = document.getElementById('status');
-  st.textContent = 'マーカーを探しています…';
-  st.classList.remove('found');
-});
+  if (hitTestSrc && (phase === 'scanning' || phase === 'placing')) {
+    const results = frame.getHitTestResults(hitTestSrc);
+    if (results.length > 0) {
+      const pose = results[0].getPose(localRefSpace);
+      reticle.visible = true;
+      reticle.matrix.fromArray(pose.transform.matrix);
+      if (phase === 'scanning') setPhase('placing');
+    } else {
+      reticle.visible = false;
+      if (phase === 'placing') setPhase('scanning');
+    }
+  }
+
+  renderer.render(scene, camera);
+}
+
+function showUnsupported() {
+  document.getElementById('start-screen').style.display = 'none';
+  document.getElementById('not-supported').style.display = 'flex';
+}
 </script>
 </body>
 </html>
